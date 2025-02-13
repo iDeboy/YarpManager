@@ -18,40 +18,10 @@ internal sealed class ClassBase64UrlConverter<T> : JsonConverter<T> {
     }
 
     public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
-
-        //if (!_enabled)
-        //    return JsonSerializer.Deserialize<T>(ref reader, JsonUtils.SerializerOptionsWithModifiers);
-
-        if (reader.TokenType is not JsonTokenType.String)
-            throw new JsonException();
-
-        var base64str = reader.GetString();
-
-        var data = Base64Url.Decode(base64str);
-
-        return JsonSerializer.Deserialize<T>(data, _options);
-
-        // return JsonSerializer.Deserialize<T>(data, JsonUtils.SerializerOptionsWithModifiers);
+        return Base64Url.Read<T>(ref reader, typeToConvert, _options);
     }
 
     public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) {
-
-        // var json = JsonSerializer.Serialize(value, JsonUtils.SerializerOptionsWithModifiers);
-
-        if (value is null) return;
-
-        ReadOnlySpan<char> json = value switch {
-            string str => str,
-            char ch => MemoryMarshal.CreateReadOnlySpan(ref ch, 1),
-            _ => JsonSerializer.Serialize(value, _options)
-        };
-
-        json = Base64Url.Encode(json);
-        //if (_enabled) {
-        //    json = Base64Url.Encode(json);
-        //}
-
-        // writer.WriteRawValue(json, true);
-        writer.WriteStringValue(json);
+        Base64Url.Write(writer, value, _options);
     }
 }

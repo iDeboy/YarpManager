@@ -1,8 +1,11 @@
 ﻿using System.Buffers;
 using System.Buffers.Text;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -65,39 +68,52 @@ public static class Base64Url {
             return (T)(object)DecodeBytes(base64str);
         }
 
+        // Plus 2 just in case T is string or char, for starting and ending '"'
+        // time 2 in case of escaping
+        using var temp = new PooledArray<char>(2 + 2 * GetDecodedBytesCount(base64str, out _));
 
-        using var temp = new TempArray<char>(GetDecodedBytesCount(base64str, out _));
-
-        int j = Decode(base64str, temp);
         ReadOnlySpan<char> data;
+        if (typeToConvert == typeof(string) || typeToConvert == typeof(char)) {
 
-        if (typeToConvert == typeof(string)) {
+            temp[0] = '"';
 
-            var array = ArrayPool<char>.Shared.Rent(data.Length + 2);
+            int j = Decode(base64str, temp.AsSpan(1));
 
-            using var d0 = Deferer.Create(array =>
-                ArrayPool<char>.Shared.Return(array), array);
+            // Escape temp.AsSpan(1, j)
+            var escaped = JsonEncodedText.Encode(temp.AsSpan(1, j), options.Encoder);
+            j = escaped.Value.Length;
+            escaped.Value.AsSpan().CopyTo(temp.AsSpan(1));
 
-            array[0] = '"';
-            data.CopyTo(array.AsSpan(1));
-            array[data.Length + 1] = '"';
+            temp[j + 1] = '"';
 
-            return JsonSerializer.Deserialize<T>(array.AsSpan(0, data.Length + 2), options);
+            data = temp.AsSpan(0, j + 2);
+
+        }
+        else {
+
+            int j = Decode(base64str, temp);
+
+            data = temp.AsSpan(0, j);
 
         }
 
-        return JsonSerializer.Deserialize<T>(data, options);
+        if (typeToConvert == typeof(char[])) {
+            return (T)(object)data.ToArray();
+        }
 
+        return JsonSerializer.Deserialize<T>(data, options);
     }
 
     internal static void Write<T>(Utf8JsonWriter writer, T value, JsonSerializerOptions options) {
 
         if (value is null) return;
 
+        PooledArray<char> temp;
+
         ReadOnlySpan<char> encodedValue;
         if (value is byte[] bytes) {
 
-            using var temp = new TempArray<char>(GetEncodedCharsCount(bytes));
+            temp = new PooledArray<char>(GetEncodedCharsCount(bytes));
 
             int j = Encode(bytes, temp);
 
@@ -105,7 +121,7 @@ public static class Base64Url {
         }
         else if (value is char[] chars) {
 
-            using var temp = new TempArray<char>(GetEncodedCharsCount(chars));
+            temp = new PooledArray<char>(GetEncodedCharsCount(chars));
 
             int j = Encode(chars, temp);
 
@@ -114,14 +130,13 @@ public static class Base64Url {
         }
         else {
 
-
             ReadOnlySpan<char> json = value switch {
                 string str => str,
                 char ch => MemoryMarshal.CreateReadOnlySpan(ref ch, 1),
                 _ => JsonSerializer.Serialize(value, options)
             };
 
-            using var temp = new TempArray<char>(GetEncodedCharsCount(json));
+            temp = new PooledArray<char>(GetEncodedCharsCount(json));
 
             int j = Encode(json, temp);
 
@@ -130,6 +145,7 @@ public static class Base64Url {
 
         writer.WriteStringValue(encodedValue);
 
+        temp.Dispose();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -418,13 +434,11 @@ public static class Base64Url {
 
         int decodedLength = GetDecodedBytesCount(data, out _);
 
-        using var temp = new TempArray<byte>(decodedLength);
+        using var temp = new PooledArray<byte>(decodedLength);
 
         int j = Decode(data, temp);
 
-        // string.CreateStringFromEncoding Check
-
-        return;
+        return AcmeUtils.Encoding.GetChars(temp.AsSpan(0, j), output);
     }
 
     private static ReadOnlySpan<char> HandlePaddingAndReplace(ReadOnlySpan<char> source, Span<char> charsSpan, bool needReplace) {

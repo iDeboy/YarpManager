@@ -6,7 +6,7 @@ using YarpManager.Acme.Utils;
 namespace YarpManager.Acme.Jws.Converters;
 internal sealed class JwhConverter<TJwk> : JsonConverter<JsonWebHeader<TJwk>> where TJwk : JsonWebKey {
     public override JsonWebHeader<TJwk>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
-        throw new NotImplementedException();
+        return JsonSerializer.Deserialize<JsonWebHeader<TJwk>>(ref reader, JsonUtils.SerializerOptionsWithModifiers);
     }
 
     public override void Write(Utf8JsonWriter writer, JsonWebHeader<TJwk> value, JsonSerializerOptions options) {

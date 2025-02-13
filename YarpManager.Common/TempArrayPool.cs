@@ -1,7 +1,8 @@
 ﻿using System.Buffers;
+using System.Runtime.CompilerServices;
 
 namespace YarpManager.Common;
-public readonly struct TempArray<T> : IDisposable {
+public readonly struct PooledArray<T> : IDisposable {
 
     private readonly T[]? _array;
 
@@ -15,7 +16,7 @@ public readonly struct TempArray<T> : IDisposable {
         }
     }
 
-    public TempArray(int minimumLength) {
+    public PooledArray(int minimumLength) {
         _array = ArrayPool<T>.Shared.Rent(minimumLength);
     }
 
@@ -50,8 +51,12 @@ public readonly struct TempArray<T> : IDisposable {
         if (_array is not null)
             ArrayPool<T>.Shared.Return(_array);
 
+        Unsafe.AsRef(in _array) = null;
     }
 
-    public static implicit operator Span<T>(TempArray<T> array)
+    public static implicit operator Span<T>(PooledArray<T> array)
+        => array.AsSpan();
+
+    public static implicit operator ReadOnlySpan<T>(PooledArray<T> array)
         => array.AsSpan();
 }

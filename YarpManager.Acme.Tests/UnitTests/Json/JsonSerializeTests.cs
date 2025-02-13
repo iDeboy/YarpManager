@@ -100,18 +100,12 @@ public class JsonSerializeTests {
 
         _output.WriteLine("Starting deserialization...");
 
-        try {
+        var Base64ClassResult = JsonSerializer.Deserialize<Base64Class>(jsonClass, JsonUtils.SerializerOptions);
+        Assert.NotNull(Base64ClassResult);
+        _output.WriteLine("    Base64Class ok");
 
-            var Base64ClassResult = JsonSerializer.Deserialize<Base64Class>(jsonClass, JsonUtils.SerializerOptions);
-            Assert.NotNull(Base64ClassResult);
-            _output.WriteLine("    Base64Class ok");
-        }
-        catch (Exception ex) {
-            _output.WriteLine(ex.StackTrace);
-        }
-
-        var base64StructResult = JsonSerializer.Deserialize<Base64Struct?>(jsonStruct, JsonUtils.SerializerOptions);
-        Assert.NotNull(base64StructResult);
+        var base64StructResult = JsonSerializer.Deserialize<Base64Struct>(jsonStruct, JsonUtils.SerializerOptions);
+        // Assert.NotNull(base64StructResult);
         _output.WriteLine("    Base64Struct ok");
 
         _output.WriteLine("Deserialization ok");
@@ -120,17 +114,33 @@ public class JsonSerializeTests {
     [Fact]
     public void Serialize_CustomStructure_Force_Base64Url() {
 
+        _output.WriteLine("Starting serialization...");
+
         var normalClass = new NormalClass();
-        var json = JsonSerializer.Serialize(normalClass, JsonUtils.Base64SerializerOptions);
-        Assert.Equal("eyJmaWVsZDEiOjEsImZpZWxkMiI6MiwiZmllbGQzIjoiMiIsImZpZWxkNCI6IjQifQ",
-            json);
-        _output.WriteLine("Force Base64Url NormalClass ok");
+        var jsonClass = JsonSerializer.Serialize(normalClass, JsonUtils.Base64SerializerOptions);
+        Assert.Equal("\"eyJmaWVsZDEiOjEsImZpZWxkMiI6MiwiZmllbGQzIjoiMiIsImZpZWxkNCI6IjQifQ\"",
+            jsonClass);
+        _output.WriteLine("    Force Base64Url NormalClass ok");
 
         var normalStruct = new NormalStruct();
-        json = JsonSerializer.Serialize(normalStruct, JsonUtils.Base64SerializerOptions);
-        Assert.Equal("eyJmaWVsZDEiOjEsImZpZWxkMiI6MiwiZmllbGQzIjoiMiIsImZpZWxkNCI6IjQifQ",
-            json);
-        _output.WriteLine("Force Base64Url NormalStruct ok");
+        var jsonStruct = JsonSerializer.Serialize(normalStruct, JsonUtils.Base64SerializerOptions);
+        Assert.Equal("\"eyJmaWVsZDEiOjEsImZpZWxkMiI6MiwiZmllbGQzIjoiMiIsImZpZWxkNCI6IjQifQ\"",
+            jsonStruct);
+        _output.WriteLine("    Force Base64Url NormalStruct ok");
+
+        _output.WriteLine("Serialization ok");
+
+        _output.WriteLine("Starting deserialization...");
+
+        var Base64ClassResult = JsonSerializer.Deserialize<NormalClass>(jsonClass, JsonUtils.Base64SerializerOptions);
+        Assert.NotNull(Base64ClassResult);
+        _output.WriteLine("    Force Base64Url NormalClass ok");
+
+        var Base64StructResult = JsonSerializer.Deserialize<NormalStruct>(jsonStruct, JsonUtils.Base64SerializerOptions);
+        // Assert.NotNull(Base64StructResult);
+        _output.WriteLine("    Force Base64Url NormalClass ok");
+
+        _output.WriteLine("Deserialization ok");
 
     }
 
@@ -140,33 +150,45 @@ public class JsonSerializeTests {
         long int64Value = 100000L;
         var json = JsonSerializer.Serialize(int64Value, JsonUtils.Base64SerializerOptions);
 
-        if (!long.TryParse(Base64Url.Decode(json), out var longResult)) {
-            Assert.Fail("Force Base64Url long bad");
-        }
-        Assert.Equal(longResult, int64Value);
+        var int64Result = JsonSerializer.Deserialize<long>(json, JsonUtils.Base64SerializerOptions);
+        Assert.Equal(int64Result, int64Value);
 
         _output.WriteLine("Force Base64Url long ok");
 
         double doubleValue = Math.PI;
         json = JsonSerializer.Serialize(doubleValue, JsonUtils.Base64SerializerOptions);
-        if (!double.TryParse(Base64Url.Decode(json), out var doubleResult)) {
-            Assert.Fail("Force Base64Url double bad");
-        }
+
+        var doubleResult = JsonSerializer.Deserialize<double>(json, JsonUtils.Base64SerializerOptions);
         Assert.Equal(doubleResult, doubleValue);
         _output.WriteLine("Force Base64Url double ok");
 
         char charValue = 'a';
         json = JsonSerializer.Serialize(charValue, JsonUtils.Base64SerializerOptions);
-        if (!char.TryParse(Base64Url.Decode(json), out var charResult)) {
-            Assert.Fail("Force Base64Url char bad");
-        }
+
+        var charResult = JsonSerializer.Deserialize<char>(json, JsonUtils.Base64SerializerOptions);
         Assert.Equal(charResult, charValue);
         _output.WriteLine("Force Base64Url char ok");
 
         string strValue = "\"RFC 7519\"";
         json = JsonSerializer.Serialize(strValue, JsonUtils.Base64SerializerOptions);
-        Assert.Equal(Base64Url.Decode(json), strValue);
+
+        var strResult = JsonSerializer.Deserialize<string>(json, JsonUtils.Base64SerializerOptions);
+        Assert.Equal(strResult, strValue);
         _output.WriteLine("Force Base64Url string ok");
+
+        byte[] bytesValue = Enumerable.Range(0, 10).Select(a => (byte)a).ToArray();
+        json = JsonSerializer.Serialize(bytesValue, JsonUtils.Base64SerializerOptions);
+
+        var bytesResult = JsonSerializer.Deserialize<byte[]>(json, JsonUtils.Base64SerializerOptions);
+        Assert.Equal(bytesResult, bytesValue);
+        _output.WriteLine("Force Base64Url byte[] ok");
+
+        char[] charsValue = Enumerable.Range(65, 26).Select(a => (char)a).ToArray();
+        json = JsonSerializer.Serialize(charsValue, JsonUtils.Base64SerializerOptions);
+
+        var charsResult = JsonSerializer.Deserialize<char[]>(json, JsonUtils.Base64SerializerOptions);
+        Assert.Equal(charsResult, charsValue);
+        _output.WriteLine("Force Base64Url char[] ok");
     }
 
     [Fact]
@@ -189,6 +211,10 @@ public class JsonSerializeTests {
         };
 
         var json = JsonSerializer.Serialize(jws, JsonUtils.SerializerOptions);
+
+        var jwsResult = JsonSerializer.Deserialize<JsonWebSignature<EcJsonWebKey, Base64PropertyClass>>(json, JsonUtils.SerializerOptions);
+        Assert.NotNull(jwsResult);
+
 
     }
 

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using YarpManager.Acme.Jws.Jwk;
 using YarpManager.Acme.Utils;
+using YarpManager.Common;
 
 namespace YarpManager.Acme.Jws;
 public static class JwsSigner {
@@ -16,27 +17,18 @@ public static class JwsSigner {
         var signatureSize = JwsUtils.GetMaxByteCount(header.Algorithm);
 
         int encodedBufferSize = encodedHeader.Length + encodedPayload.Length + 1 + signatureSize;
-        var encodedChars = ArrayPool<char>.Shared.Rent(encodedBufferSize);
 
-        using var d0 = Deferer.Create(array => {
-            ArrayPool<char>.Shared.Return(array);
-        }, encodedChars);
+        using var encodedChars = new PooledArray<char>(encodedBufferSize);
 
         encodedHeader.CopyTo(encodedChars);
         encodedChars[encodedHeader.Length] = '.';
         encodedPayload.CopyTo(encodedChars.AsSpan(encodedHeader.Length + 1));
 
-        var asciiBytes = ArrayPool<byte>.Shared.Rent(Encoding.ASCII.GetMaxByteCount(encodedBufferSize));
-        using var d1 = Deferer.Create(array => {
-            ArrayPool<byte>.Shared.Return(array);
-        }, asciiBytes);
+        using var asciiBytes = new PooledArray<byte>(Encoding.ASCII.GetMaxByteCount(encodedBufferSize));
 
-        int asciiBytesCount = Encoding.ASCII.GetBytes(encodedChars, 0, encodedHeader.Length + encodedPayload.Length + 1, asciiBytes, 0);
+        int asciiBytesCount = Encoding.ASCII.GetBytes(encodedChars.AsSpan(0, encodedHeader.Length + encodedPayload.Length + 1), asciiBytes);
 
-        var signatureBytes = ArrayPool<byte>.Shared.Rent(signatureSize);
-        using var d2 = Deferer.Create(array => {
-            ArrayPool<byte>.Shared.Return(array, true);
-        }, signatureBytes);
+        using var signatureBytes = new PooledArray<byte>(signatureSize);
 
         int encodedSignatureLength = 0;
         int signatureLength = 0;
@@ -68,21 +60,16 @@ public static class JwsSigner {
         if (header.JsonWebKey is null) return true;
 
         int encodedBufferSize = encodedHeader.Length + encodedPayload.Length + 1;
-        var encodedChars = ArrayPool<char>.Shared.Rent(encodedBufferSize);
-        using var d0 = Deferer.Create(array => {
-            ArrayPool<char>.Shared.Return(array);
-        }, encodedChars);
+
+        using var encodedChars = new PooledArray<char>(encodedBufferSize);
 
         encodedHeader.CopyTo(encodedChars);
         encodedChars[encodedHeader.Length] = '.';
         encodedPayload.CopyTo(encodedChars.AsSpan(encodedHeader.Length + 1));
 
-        var asciiBytes = ArrayPool<byte>.Shared.Rent(Encoding.ASCII.GetMaxByteCount(encodedBufferSize));
-        using var d1 = Deferer.Create(array => {
-            ArrayPool<byte>.Shared.Return(array);
-        }, asciiBytes);
+        using var asciiBytes = new PooledArray<byte>(Encoding.ASCII.GetMaxByteCount(encodedBufferSize));
 
-        int asciiBytesCount = Encoding.ASCII.GetBytes(encodedChars, 0, encodedBufferSize, asciiBytes, 0);
+        int asciiBytesCount = Encoding.ASCII.GetBytes(encodedChars.AsSpan(0, encodedBufferSize), asciiBytes);
 
         if (header.JsonWebKey is RsaJsonWebKey rsaJwk) {
 
@@ -118,15 +105,24 @@ public static class JwsSigner {
 
         var hashAlgorithm = JwsUtils.GetHashAlgorithmName(algorithm);
 
-        using var rsa = RSA.Create(new RSAParameters() {
-            Modulus = jwk.Modulus,
-            Exponent = jwk.Exponent,
-        });
+        if (jwk._rsa is null) {
 
-        return rsa.VerifyData(data,
-            signature,
-            hashAlgorithm,
-            rsaPadding);
+            using var rsa = RSA.Create(new RSAParameters() {
+                Modulus = jwk.Modulus,
+                Exponent = jwk.Exponent,
+            });
+
+            return rsa.VerifyData(data,
+                signature,
+                hashAlgorithm,
+                rsaPadding);
+
+        }
+
+        return jwk._rsa.VerifyData(data,
+                signature,
+                hashAlgorithm,
+                rsaPadding);
     }
 
     private static bool VerifyEC(EcJsonWebKey jwk,
@@ -136,19 +132,29 @@ public static class JwsSigner {
 
         var hashAlgorithm = JwsUtils.GetHashAlgorithmName(algorithm);
 
-        var curve = JwsUtils.GetEllipticCurveName(jwk.Curve);
+        if (jwk._ec is null) {
 
-        using var ec = ECDsa.Create(new ECParameters() {
-            Curve = curve,
-            Q = {
+            var curve = JwsUtils.GetEllipticCurveName(jwk.Curve);
+
+            using var ec = ECDsa.Create(new ECParameters() {
+                Curve = curve,
+                Q = {
                 X = jwk.X,
                 Y = jwk.Y,
             }
-        });
+            });
 
-        return ec.VerifyData(data,
-            signature,
-            hashAlgorithm);
+            return ec.VerifyData(data,
+                signature,
+                hashAlgorithm);
+
+        }
+
+        return jwk._ec.VerifyData(data,
+                signature,
+                hashAlgorithm);
+
+
     }
 
     private static int SignRSA(

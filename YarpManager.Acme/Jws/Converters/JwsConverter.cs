@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using YarpManager.Acme.Jws.Jwk;
 using YarpManager.Acme.Utils;
+using YarpManager.Common;
 
 namespace YarpManager.Acme.Jws.Converters;
 internal sealed class JwsConverter<TJwk, TPayload> : JsonConverter<JsonWebSignature<TJwk, TPayload>> where TJwk : JsonWebKey {
@@ -34,15 +35,14 @@ internal sealed class JwsConverter<TJwk, TPayload> : JsonConverter<JsonWebSignat
 
             switch (propertyName) {
                 case "protected":
-                    encodedHeader = reader.GetString()!;
-                    json = Base64Url.Decode(encodedHeader);
+                    encodedHeader = reader.GetString();
+                    header = JsonSerializer.Deserialize<JsonWebHeader<TJwk>>(ref reader, JsonUtils.Base64SerializerOptions);
+                    //json = Base64Url.Decode(encodedHeader);
 
-                    header = JsonSerializer.Deserialize<JsonWebHeader<TJwk>>(json, JsonUtils.SerializerOptionsWithModifiers);
+                    //header = JsonSerializer.Deserialize<JsonWebHeader<TJwk>>(json, JsonUtils.SerializerOptionsWithModifiers);
                     break;
                 case "payload":
-
-                    encodedPayload = reader.GetString()!;
-                    json = Base64Url.Decode(encodedPayload);
+                    encodedPayload = reader.GetString();
 
                     if (typeof(TPayload) == typeof(EmptyPayload)) {
                         payload = (TPayload)(object)EmptyPayload.Instance;
@@ -51,7 +51,7 @@ internal sealed class JwsConverter<TJwk, TPayload> : JsonConverter<JsonWebSignat
                         payload = (TPayload)(object)EmptyObjectPayload.Instance;
                     }
                     else {
-                        payload = JsonSerializer.Deserialize<TPayload>(json, JsonUtils.SerializerOptionsWithModifiers);
+                        payload = JsonSerializer.Deserialize<TPayload>(ref reader, JsonUtils.Base64SerializerOptions);
                     }
 
                     break;
@@ -66,7 +66,11 @@ internal sealed class JwsConverter<TJwk, TPayload> : JsonConverter<JsonWebSignat
         Debug.Assert(payload is not null);
         Debug.Assert(signature is not null);
 
-        if (!JwsSigner.Verify(header, Base64Url.DecodeBytes(signature), encodedHeader, encodedPayload))
+        using var signatureBytes = new PooledArray<byte>(Base64Url.GetDecodedBytesCount(signature, out _));
+
+        int signatureLength = Base64Url.Decode(signature, signatureBytes);
+
+        if (!JwsSigner.Verify(header, signatureBytes.AsSpan(0, signatureLength), encodedHeader, encodedPayload))
             throw new JsonException("Invalid signature");
 
         return new JsonWebSignature<TJwk, TPayload>() {
@@ -80,15 +84,18 @@ internal sealed class JwsConverter<TJwk, TPayload> : JsonConverter<JsonWebSignat
 
         var header = value.Protected;
 
-        var encodedHeader = JsonSerializer.Serialize(header, JsonUtils.Base64SerializerOptions);
-        
-        var encodedPayload = value.Payload switch {
-            EmptyPayload or null => string.Empty, //Base64Url.Encode(string.Empty),
+        ReadOnlySpan<char> encodedHeader = JsonSerializer.Serialize(header, JsonUtils.Base64SerializerOptions);
+
+        ReadOnlySpan<char> encodedPayload = value.Payload switch {
+            EmptyPayload or null => string.Empty, // Base64Url.Encode(string.Empty),
             EmptyObjectPayload => "e30", // Base64Url.Encode("{}")
-            _ => JsonSerializer.Serialize(value.Payload, JsonUtils.Base64SerializerOptions).AsSpan().Trim('"'),
+            _ => JsonSerializer.Serialize(value.Payload, JsonUtils.Base64SerializerOptions),
         };
-        
-        var encodedSignature = JwsSigner.Sign(header, encodedHeader, encodedPayload);
+
+        encodedHeader = encodedHeader.Trim('"');
+        encodedPayload = encodedPayload.Trim('"');
+
+        var encodedSignature = JwsSigner.Sign(header, encodedHeader, encodedPayload.Trim('"'));
 
         writer.WriteStartObject();
         {
