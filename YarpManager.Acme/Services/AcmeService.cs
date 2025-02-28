@@ -1,10 +1,10 @@
 ﻿using System.Buffers;
 using System.Diagnostics;
+using System.Net;
 using YarpManager.Acme.Clients;
 using YarpManager.Acme.Jws;
 using YarpManager.Acme.Jws.Keys;
 using YarpManager.Acme.Resources;
-using YarpManager.Acme.Utils;
 using YarpManager.Common;
 
 namespace YarpManager.Acme.Services;
@@ -21,16 +21,38 @@ internal sealed class AcmeService : IAcmeService {
         _client = client;
     }
 
-    public ValueTask<IAccountService> Account(AsymmetricKey key) {
-        throw new NotImplementedException();
+    public ValueTask<AcmeResponse<AcmeDirectory>> GetDirectory()
+       => _client.GetDirectory();
+
+    public async ValueTask<AcmeResponse<IAccountService>> Account(AsymmetricKeyInfo key) {
+
+        var resourceRes = await _client.Resource(d => d.NewAccount);
+
+        if (!resourceRes.TryGet(out var newAccountUri))
+            return resourceRes.To<IAccountService>();
+
+        Debug.Assert(newAccountUri is not null);
+
+        var account = new AcmeAccount.Request {
+            OnlyReturnExisting = true,
+        };
+
+        var response = await _client.Post<AcmeAccount, AcmeAccount.Request>(
+            newAccountUri,
+            key,
+            account);
+
+        if (!response.IsSuccessStatusCode) key.Dispose();
+
+        return response.To<IAccountService, (IAcmeClient client, AsymmetricKeyInfo key)>((res, args) => new AccountService(args.client, res.Location!, args.key), (_client, key));
     }
+   
+    public async ValueTask<AcmeResponse<IAccountService>> NewAccount(string[] contact, bool termsOfServiceAgreed, JsonSignAlgorithm keyAlgorithm = JsonSignAlgorithm.RS256) {
 
-    public ValueTask<AcmeDirectory> GetDirectory()
-        => _client.GetDirectory();
+        var resourceRes = await _client.Resource(d => d.NewAccount);
 
-    public async ValueTask<IAccountService> NewAccount(string[] contact, bool termsOfServiceAgreed, JsonSignAlgorithm keyAlgorithm = JsonSignAlgorithm.RS256) {
-
-        var newAccountUri = await _client.Resource(d => d.NewAccount);
+        if (!resourceRes.TryGet(out var newAccountUri))
+            return resourceRes.To<IAccountService>();
 
         Debug.Assert(newAccountUri is not null);
 
@@ -44,14 +66,25 @@ internal sealed class AcmeService : IAcmeService {
             TermsOfServiceAgreed = termsOfServiceAgreed
         };
 
-        var key = AsymmetricKey.Create(keyAlgorithm);
+        AcmeResponse<AcmeAccount>? response;
+        AsymmetricKeyInfo key;
+        do {
 
-        var response = await _client.Post<AcmeAccount, AcmeAccount.Request>(
+            key = AsymmetricKeyInfo.Create(keyAlgorithm);
+
+            response = await _client.Post<AcmeAccount, AcmeAccount.Request>(
             newAccountUri,
             key,
             account);
 
-        return new AccountService(response.Location!, key);
+            if (!response.IsSuccessStatusCode) key.Dispose();
+
+            --keyAlgorithm;
+
+        } while (response.StatusCode is HttpStatusCode.BadRequest &&
+            response.Content.Error.Type is AcmeErrorType.Malformed or AcmeErrorType.BadPublicKey);
+
+        return response.To<IAccountService, (IAcmeClient client, AsymmetricKeyInfo key)>((res, args) => new AccountService(args.client, res.Location!, args.key), (_client, key));
     }
 
     private static string FormatContact(string input) {
@@ -59,29 +92,27 @@ internal sealed class AcmeService : IAcmeService {
         ReadOnlySpan<char> Mailto = "mailto:";
         const int MailtoLength = 7;
 
-        var array = ArrayPool<char>.Shared.Rent(MailtoLength + input.Length);
-        using var d0 = Deferer.Create(
-            array => ArrayPool<char>.Shared.Return(array), array);
+        using var contact = new PooledArray<char>(MailtoLength + input.Length);
 
         var span = input.AsSpan();
         int outputLen;
 
         if (!span.StartsWith(Mailto)) {
 
-            Mailto.CopyTo(array);
+            Mailto.CopyTo(contact);
 
             outputLen = span
-                .ToLowerInvariant(array.AsSpan(MailtoLength));
+                .ToLowerInvariant(contact.AsSpan(MailtoLength));
 
             outputLen += MailtoLength;
 
         }
         else {
-            outputLen = span.ToLowerInvariant(array);
+            outputLen = span.ToLowerInvariant(contact);
         }
 
 
-        return array.AsSpan(0, outputLen).ToString();
+        return contact.AsSpan(0, outputLen).ToString();
 
     }
 

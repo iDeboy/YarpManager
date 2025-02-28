@@ -1,15 +1,16 @@
 ﻿using System.Security.Principal;
+using YarpManager.Acme.Abstractions;
 using YarpManager.Acme.Jws.Keys;
 using YarpManager.Acme.Resources;
 
 namespace YarpManager.Acme.Services;
-public interface IAccountService : IDisposable {
+public interface IAccountService : IAccountData, IDisposable {
 
-    Uri Location { get; }
-    AsymmetricKey Key { get; }
+    ValueTask<AcmeResponse<AcmeAccount>> Account();
+    ValueTask<AcmeResponse<AcmeAccount>> Deactivate();
+    ValueTask<AcmeResponse<AcmeAccount>> ChangeKey(AsymmetricKeyInfo key);
+    ValueTask<AcmeResponse<IOrderService>> NewOrder(string[] domains, DateTimeOffset? notBefore = null, DateTimeOffset? notAfter = null);
 
-    ValueTask<AcmeAccount> Deactivate();
-
-    ValueTask<AcmeAccount> ChangeKey(AsymmetricKey key);
+    bool SaveKey(string path);
 
 }

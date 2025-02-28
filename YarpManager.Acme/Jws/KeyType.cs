@@ -1,8 +1,8 @@
-﻿using System.Text.Json.Serialization;
+﻿using YarpManager.Acme.Attributes;
 
 namespace YarpManager.Acme.Jws;
 
-[JsonConverter(typeof(JsonStringEnumConverter<KeyType>))]
+[StringEnum]
 public enum KeyType {
     EC,
     RSA,

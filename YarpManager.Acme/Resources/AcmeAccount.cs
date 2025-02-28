@@ -1,59 +1,34 @@
-﻿using System.Runtime.Serialization;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace YarpManager.Acme.Resources;
-public sealed class AcmeAccount {
-
-    /// <summary>
-    /// Represents the status of <see cref="AcmeAccount"/>.
-    /// </summary>
-    public enum StatusType {
-        /// <summary>
-        /// The valid status.
-        /// </summary>
-        [EnumMember(Value = "valid")]
-        Valid,
-
-        /// <summary>
-        /// The deactivated status, initiated by client.
-        /// </summary>
-        [EnumMember(Value = "deactivated")]
-        Deactivated,
-
-        /// <summary>
-        /// The revoked status, initiated by server.
-        /// </summary>
-        [EnumMember(Value = "revoked")]
-        Revoked,
-    }
+public sealed class AcmeAccount : ExtensionMembers {
 
     [JsonRequired]
     [JsonPropertyName("status")]
-    public required StatusType Status { get; set; }
+    public required AccountStatusType Status { get; init; }
 
     [JsonPropertyName("contact")]
-    public string[]? Contact { get; set; }
+    public string[]? Contact { get; init; }
 
     [JsonPropertyName("termsOfServiceAgreed")]
-    public bool? TermsOfServiceAgreed { get; set; } = null;
+    public bool? TermsOfServiceAgreed { get; init; }
 
     // [JsonPropertyName("externalAccountBinding")]
-    // public ExternalJsonWebSignature? ExternalAccountBinding { get; set; }
+    // public ExternalJsonWebSignature? ExternalAccountBinding { get; init; }
 
-    [JsonRequired]
     [JsonPropertyName("orders")]
-    public required Uri Orders { get; set; }
+    public Uri? Orders { get; init; }
 
-    public sealed class Request {
+    internal sealed class Request : ExtensionMembers {
 
         [JsonPropertyName("contact")]
         public string[]? Contact { get; set; }
 
         [JsonPropertyName("termsOfServiceAgreed")]
-        public bool? TermsOfServiceAgreed { get; set; } = null;
+        public bool? TermsOfServiceAgreed { get; set; }
 
         [JsonPropertyName("onlyReturnExisting")]
-        public bool? OnlyReturnExisting { get; set; } = null;
+        public bool OnlyReturnExisting { get; set; }
 
         // [JsonPropertyName("externalAccountBinding")]
         // public ExternalJsonWebSignature? ExternalAccountBinding { get; set; }

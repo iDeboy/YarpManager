@@ -1,13 +1,11 @@
 ﻿using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using YarpManager.Acme.Attributes;
 
 namespace YarpManager.Acme.Jws.Jwk;
 public sealed class RsaJsonWebKey : JsonWebKey {
 
     internal RSA? _rsa;
-
-    [JsonIgnore]
-    public override KeyType KeyType { get; set; } = KeyType.RSA;
 
     [JsonPropertyName("e")]
     [JsonPropertyOrder(1)]
@@ -19,8 +17,8 @@ public sealed class RsaJsonWebKey : JsonWebKey {
     [Base64Url]
     public byte[]? Modulus { get; set; }
 
-    public RsaJsonWebKey() { }
-    public RsaJsonWebKey(RSA rsa) {
+    public RsaJsonWebKey() : base(KeyType.RSA) { }
+    public RsaJsonWebKey(RSA rsa) : this() {
         var @params = rsa.ExportParameters(false);
         Exponent = @params.Exponent;
         Modulus = @params.Modulus;

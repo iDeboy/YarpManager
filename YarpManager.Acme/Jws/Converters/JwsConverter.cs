@@ -31,7 +31,7 @@ internal sealed class JwsConverter<TJwk, TPayload> : JsonConverter<JsonWebSignat
             if (reader.TokenType is not JsonTokenType.String)
                 throw new JsonException();
 
-            string json;
+            // string json;
 
             switch (propertyName) {
                 case "protected":

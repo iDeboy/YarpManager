@@ -194,7 +194,7 @@ public class JsonSerializeTests {
     [Fact]
     public void Serialize_Jws() {
 
-        using EcKey key = (EcKey)AsymmetricKey.Create(JsonSignAlgorithm.ES256);
+        using EcKeyInfo key = (EcKeyInfo)AsymmetricKeyInfo.Create(JsonSignAlgorithm.ES256);
 
         var pem = key.Key.ExportPkcs8PrivateKeyPem();
 

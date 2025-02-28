@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+﻿using YarpManager.Acme.Attributes;
 
 namespace YarpManager.Acme.Jws;
 
@@ -8,21 +8,9 @@ namespace YarpManager.Acme.Jws;
 /// <br/>
 /// See: <see cref="https://datatracker.ietf.org/doc/html/rfc7518#section-3.1"/>
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<JsonSignAlgorithm>))]
-public enum JsonSignAlgorithm {
+[StringEnum]
+public enum JsonSignAlgorithm : byte {
 
-    /// <summary>
-    /// ECDSA using P-256 and SHA-256
-    /// </summary>
-    ES256,
-    /// <summary>
-    /// ECDSA using P-384 and SHA-384
-    /// </summary>
-    ES384,
-    /// <summary>
-    /// ECDSA using P-521 and SHA-512
-    /// </summary>
-    ES512,
     /// <summary>
     /// RSASSA-PKCS1-v1_5 using SHA-256      
     /// </summary>
@@ -31,6 +19,10 @@ public enum JsonSignAlgorithm {
     /// RSASSA-PKCS1-v1_5 using SHA-384
     /// </summary>
     RS384,
+    /// <summary>
+    /// ECDSA using P-384 and SHA-384
+    /// </summary>
+    ES384,
     /// <summary>
     /// RSASSA-PKCS1-v1_5 using SHA-512
     /// </summary>
@@ -44,7 +36,16 @@ public enum JsonSignAlgorithm {
     /// </summary>
     PS384,
     /// <summary>
+    /// ECDSA using P-256 and SHA-256
+    /// </summary>
+    ES256,
+    /// <summary>
+    /// ECDSA using P-521 and SHA-512
+    /// </summary>
+    ES512,
+    /// <summary>
     /// RSASSA-PSS using SHA-512 and MGF1 with SHA-512
     /// </summary>
     PS512,
+
 }

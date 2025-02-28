@@ -1,4 +1,5 @@
 ﻿using System.Text.Json.Serialization;
+using YarpManager.Acme.Attributes;
 
 namespace YarpManager.Acme.Jws;
 
@@ -8,7 +9,7 @@ namespace YarpManager.Acme.Jws;
 /// <br/>
 /// See: <see cref="https://datatracker.ietf.org/doc/html/rfc7518#section-3.1"/>
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<JsonHashAlgorithm>))]
+[StringEnum]
 public enum JsonHashAlgorithm {
 
     /// <summary>

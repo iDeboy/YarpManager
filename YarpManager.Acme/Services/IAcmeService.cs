@@ -6,11 +6,11 @@ namespace YarpManager.Acme.Services;
 public interface IAcmeService {
 
 
-    ValueTask<AcmeDirectory> GetDirectory();
+    ValueTask<AcmeResponse<AcmeDirectory>> GetDirectory();
 
-    ValueTask<IAccountService> Account(AsymmetricKey key);
+    ValueTask<AcmeResponse<IAccountService>> Account(AsymmetricKeyInfo key);
 
-    ValueTask<IAccountService> NewAccount(string[] contact, bool termsOfServiceAgreed, JsonSignAlgorithm keyAlgorithm = JsonSignAlgorithm.RS256);
+    ValueTask<AcmeResponse<IAccountService>> NewAccount(string[] contact, bool termsOfServiceAgreed, JsonSignAlgorithm keyAlgorithm = JsonSignAlgorithm.RS256);
 
     //ValueTask<AcmeResponse<T>> Get<T>(Uri uri);
 

@@ -5,6 +5,10 @@ public abstract class JsonWebKey {
 
     [JsonPropertyName("kty")]
     [JsonPropertyOrder(2)]
-    public abstract KeyType KeyType { get; set; }
+    public KeyType KeyType { get; set; }
+
+    protected JsonWebKey(KeyType kty) {
+        KeyType = kty;
+    }
 
 }

@@ -1,8 +1,12 @@
-﻿using System.Buffers;
+﻿using System;
+using System.Buffers;
 using System.Collections.Frozen;
+using System.Diagnostics;
+using System.IO;
 using System.Linq.Expressions;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using YarpManager.Acme.Jws;
@@ -16,135 +20,114 @@ using YarpManager.Common.Result;
 namespace YarpManager.Acme.Clients;
 internal sealed class AcmeClient : IAcmeClient {
 
-    private string? _nonce;
-    private AcmeDirectory? _directory;
-
-    private readonly Uri _directoryUri;
     private readonly HttpClient _httpClient;
+
+    private Uri _directoryUri;
+    private string? _nonce;
 
     public AcmeClient(Uri directoryUri, HttpClient httpClient) {
         _directoryUri = directoryUri;
         _httpClient = httpClient;
     }
 
-    public async ValueTask<Uri?> Resource(Expression<Func<AcmeDirectory, Uri?>> getResource, bool optional = false) {
+    public async ValueTask<AcmeResponse<Uri?>> Resource(Expression<Func<AcmeDirectory, Uri?>> getResource, bool optional = false) {
 
-        var directory = await GetDirectory();
+        var dirRes = await GetDirectory();
+
+        if (!dirRes.TryGet(out var dir)) return dirRes.To<Uri?>();
 
         if (getResource.Body is not MemberExpression bodyMember)
             throw new ArgumentException("Expression should be a member");
 
         var resourceName = bodyMember.Member.Name;
-        var uri = getResource.Compile()(directory);
+
+        var uri = getResource.Compile()(dir!);
 
         if (uri is null && !optional) {
-            throw new ArgumentNullException(resourceName,
-                $"{resourceName} is required.");
+
+            var error = new AcmeError {
+                Type = AcmeErrorType.ClientInternal,
+                Detail = $"{resourceName} is required."
+            };
+
+            return new(
+                HttpStatusCode.InternalServerError,
+                null,
+                null,
+                error,
+                FrozenDictionary<string, Uri[]>.Empty,
+                0);
         }
 
-        return uri;
+        return dirRes.To(uri);
     }
 
-    public async ValueTask<AcmeDirectory> GetDirectory() {
-
-        if (_directory is not null) return _directory;
+    public async ValueTask<AcmeResponse<AcmeDirectory>> GetDirectory() {
 
         var response = await Get<AcmeDirectory>(_directoryUri);
 
-        if (response.StatusCode is HttpStatusCode.OK) {
-            _directory = response.Response.Value;
-            _directory.Index = _directoryUri;
-
-            _nonce = await GetNewNonce();
-
-            return _directory;
-        }
-
-        throw response.Response.Throw();
+        return response.To(res => res.Content.Value);
     }
 
     public ValueTask<AcmeResponse<T>> Get<T>(Uri uri) {
 
         using var request = CreateMessage(HttpMethod.Get, uri);
 
-        return SendAcmeRequest<T>(request);
+        return SendGetAcmeRequest<T>(request);
     }
 
-    public async ValueTask<AcmeResponse<T>> Post<T, TPayload>(Uri uri, Uri keyId, AsymmetricKey key, TPayload payload) {
+    public async ValueTask<AcmeResponse<T>> Post<T, TPayload>(Uri uri, Uri keyId, AsymmetricKeyInfo key, TPayload payload) {
 
-        await GetDirectory(); // Ensure directory entity
+        int retryCount = 0;
+        AcmeResponse<T> response;
+        do {
 
-        while (_nonce is null) { // Ensure nonce
-            await GetNewNonce();
-        }
+            var jwsRes = await GenerateJws(uri, keyId, key, payload);
 
-        string json;
-        if (key is RsaKey rsaKey) {
+            if (!jwsRes.TryGet(out var jws))
+                return jwsRes.To<T>();
 
-            var jwh = new JsonWebHeader<RsaJsonWebKey> {
-                Algorithm = key.Algorithm,
-                Nonce = _nonce,
-                Url = uri,
-                KeyId = keyId,
-                JsonWebKey = new RsaJsonWebKey(rsaKey.Key)
-            };
+            Debug.Assert(jws is not null);
 
-            var jwt = new JsonWebSignature<RsaJsonWebKey, TPayload> {
-                Protected = jwh,
-                Payload = payload
-            };
+            using var request = CreateMessage(HttpMethod.Post, uri);
 
-            json = JsonSerializer.Serialize(jwt, JsonUtils.SerializerOptions);
+            request.Content = new StringContent(jws, Encoding.UTF8, AcmeConstants.JoseJsonMediaType);
+            response = await SendPostAcmeRequest<T>(request);
 
-        }
-        else if (key is EcKey ecKey) {
-
-            var jwh = new JsonWebHeader<EcJsonWebKey> {
-                Algorithm = key.Algorithm,
-                Nonce = _nonce,
-                Url = uri,
-                KeyId = keyId,
-                JsonWebKey = new EcJsonWebKey(ecKey.Key)
-            };
-
-            var jwt = new JsonWebSignature<EcJsonWebKey, TPayload> {
-                Protected = jwh,
-                Payload = payload
-            };
-
-            json = JsonSerializer.Serialize(jwt, JsonUtils.SerializerOptions);
-        }
-        else {
-            throw new NotSupportedException($"Key {key.GetType().Name} not supported.");
-        }
-
-        using var request = CreateMessage(HttpMethod.Post, uri);
-
-        request.Content = new StringContent(json, Encoding.UTF8, AcmeConstants.JoseJsonMediaType);
-        var response = await SendAcmeRequest<T>(request);
-
-        
+        } while (response.StatusCode is HttpStatusCode.BadRequest &&
+            response.Content.Error.Type is AcmeErrorType.BadNonce &&
+            retryCount++ < 3);
 
         return response;
-
     }
 
-    public async ValueTask<AcmeResponse<T>> Post<T, TPayload>(Uri uri, AsymmetricKey key, TPayload payload) {
+    public ValueTask<AcmeResponse<T>> Post<T, TPayload>(Uri uri, AsymmetricKeyInfo key, TPayload payload)
+        => Post<T, TPayload>(uri, null!, key, payload);
 
-        await GetDirectory(); // Ensure directory entity
+    private async ValueTask<AcmeResponse<string>> GenerateJws<TPayload>(Uri url, Uri? keyId, AsymmetricKeyInfo key, TPayload payload) {
 
-        while (_nonce is null) { // Ensure nonce
-            await GetNewNonce();
+        string? nonce;
+        if (_nonce is not null) nonce = _nonce;
+        else {
+
+            var nonceRes = await FetchNewNonce();
+
+            if (!nonceRes.TryGet(out nonce))
+                return nonceRes.To<string>();
+
         }
 
+        Debug.Assert(nonce is not null);
+
         string json;
-        if (key is RsaKey rsaKey) {
+        if (key is RsaKeyInfo rsaKey) {
 
             var jwh = new JsonWebHeader<RsaJsonWebKey> {
                 Algorithm = key.Algorithm,
-                Nonce = _nonce,
-                Url = uri,
-                JsonWebKey = new RsaJsonWebKey(rsaKey.Key)
+                Nonce = nonce,
+                Url = url,
+                KeyId = keyId,
+                JsonWebKey = rsaKey.JsonWebKey
             };
 
             var jwt = new JsonWebSignature<RsaJsonWebKey, TPayload> {
@@ -155,13 +138,14 @@ internal sealed class AcmeClient : IAcmeClient {
             json = JsonSerializer.Serialize(jwt, JsonUtils.SerializerOptions);
 
         }
-        else if (key is EcKey ecKey) {
+        else if (key is EcKeyInfo ecKey) {
 
             var jwh = new JsonWebHeader<EcJsonWebKey> {
                 Algorithm = key.Algorithm,
-                Nonce = _nonce,
-                Url = uri,
-                JsonWebKey = new EcJsonWebKey(ecKey.Key)
+                Nonce = nonce,
+                Url = url,
+                KeyId = keyId,
+                JsonWebKey = ecKey.JsonWebKey
             };
 
             var jwt = new JsonWebSignature<EcJsonWebKey, TPayload> {
@@ -173,87 +157,162 @@ internal sealed class AcmeClient : IAcmeClient {
 
         }
         else {
-            throw new NotSupportedException($"Key {key.GetType().Name} not supported.");
+
+            var error = new AcmeError {
+                Type = AcmeErrorType.ClientInternal,
+                Detail = $"Key {key.GetType().Name} not supported."
+            };
+
+            return AcmeResponse<string>.From(error);
         }
+
+        return AcmeResponse<string>.From(json);
+    }
+
+    private async ValueTask<AcmeResponse<T>> SendGetAcmeRequest<T>(HttpRequestMessage request) {
+
+        try {
+
+            using var response = await _httpClient.SendAsync(request);
+
+            var result = await GetResult<T>(response);
+
+            return new(
+                response.StatusCode,
+                response.Headers.Location,
+                response.Content.Headers.ContentType?.MediaType,
+                result,
+                GetLinks(response),
+                GetRetryAfter(response));
+
+        }
+        catch (Exception ex) {
+            return AcmeResponse<T>.From(ex);
+        }
+
+
+
+    }
+
+    private async ValueTask<AcmeResponse<T>> SendPostAcmeRequest<T>(HttpRequestMessage request) {
 
         _nonce = null;
+        try {
 
-        using var request = CreateMessage(HttpMethod.Post, uri);
+            using var response = await _httpClient.SendAsync(request);
 
-        request.Content = new StringContent(json, Encoding.UTF8, AcmeConstants.JoseJsonMediaType);
-        var response = await SendAcmeRequest<T>(request);
-        
-        return response;
-    }
+            CacheNonce(response);
+            var result = await GetResult<T>(response);
 
-    private async ValueTask<AcmeResponse<T>> SendAcmeRequest<T>(HttpRequestMessage request) {
+            return new(
+                response.StatusCode,
+                response.Headers.Location,
+                response.Content.Headers.ContentType?.MediaType,
+                result,
+                GetLinks(response),
+                GetRetryAfter(response)
+                );
 
-        using var response = await _httpClient.SendAsync(request);
-
-        var nonce = await GetNonce(response);
-        var result = await GetResult<T>(response);
-
-        return new(
-            response.StatusCode,
-            response.Headers.Location,
-            response.Content.Headers.ContentType?.MediaType,
-            result,
-            GetLinks(response),
-            GetRetryAfter(response)
-            );
+        }
+        catch (Exception ex) {
+            return AcmeResponse<T>.From(ex);
+        }
 
     }
 
     private static async ValueTask<Result<T, AcmeError>> GetResult<T>(HttpResponseMessage response) {
 
-        var result = Result.FromException<T, AcmeError>(new HttpRequestException($"Could not get {typeof(T).Name} resource."));
+        try {
 
-        if (IsJsonMediaType(response.Content.Headers.ContentType?.MediaType)) {
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
 
-            if (response.IsSuccessStatusCode)
-                result = (await response.Content.ReadFromJsonAsync<T>(JsonUtils.SerializerOptions))!;
-            else
-                result = (await response.Content.ReadFromJsonAsync<AcmeError>(JsonUtils.SerializerOptions))!;
-        }
-        else {
+            if (IsJsonMediaType(mediaType)) {
 
-            try {
+#if DEBUG
+                var json = await response.Content.ReadAsStringAsync();
+#endif
+
+                if (response.IsSuccessStatusCode)
+                    return (await response.Content.ReadFromJsonAsync<T>(JsonUtils.SerializerOptions))!;
+                else
+                    return (await response.Content.ReadFromJsonAsync<AcmeError>(JsonUtils.SerializerOptions))!;
+            }
+            else if (typeof(T) == typeof(string)) {
+                var str = await response.Content.ReadAsStringAsync();
+                return (T)(object)str;
+            }
+            else if (typeof(T) == typeof(byte[])) {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                return (T)(object)bytes;
+            }
+            else if (typeof(T) == typeof(X509Certificate2)) {
+
+                var cert = await GetCert(mediaType, response.Content);
+
+                if (cert is null) {
+                    return new AcmeError {
+                        Type = AcmeErrorType.ClientInternal,
+                        Detail = "Could not get certificate."
+                    };
+                }
+
+                return (T)(object)cert;
+
+            }
+            else {
                 response.EnsureSuccessStatusCode();
             }
-            catch (Exception ex) {
-                result = Result.FromException<T, AcmeError>(ex);
-            }
+
+        }
+        catch (Exception ex) {
+            return Result.FromException<T, AcmeError>(ex);
         }
 
-        return result;
+        return Result.FromException<T, AcmeError>(new HttpRequestException($"Could not get {typeof(T).Name} resource."));
     }
 
-    private ValueTask<string?> GetNonce(HttpResponseMessage response) {
+    private void CacheNonce(HttpResponseMessage response) {
 
-        if (_nonce is not null) return ValueTask.FromResult<string?>(_nonce);
+        if (_nonce is not null) return;
 
         if (response.Headers.TryGetValues("Replay-Nonce", out var values))
-            return ValueTask.FromResult<string?>(_nonce = values.First());
+            _nonce = values.First();
 
-        if (_directory is null) return ValueTask.FromResult<string?>(null);
-
-        return GetNewNonce();
     }
 
-    private async ValueTask<string?> GetNewNonce() {
+    private async ValueTask<AcmeResponse<string>> FetchNewNonce() {
 
-        if (_nonce is not null) return _nonce;
+        var resouceRes = await Resource(dir => dir.NewNonce);
 
-        if (_directory is null) return null;
+        if (!resouceRes.TryGet(out var newNonceUri))
+            return resouceRes.To<string>();
 
-        using var request = CreateMessage(HttpMethod.Head, _directory.NewNonce);
+        using var request = CreateMessage(HttpMethod.Head, newNonceUri!);
 
         using var response = await _httpClient.SendAsync(request);
 
-        if (!response.Headers.TryGetValues("Replay-Nonce", out var values))
-            return null;
+        if (response.Headers.TryGetValues("Replay-Nonce", out var values))
+            return resouceRes.To(values.First());
 
-        return _nonce = values.First();
+        var error = new AcmeError {
+            Type = AcmeErrorType.ClientInternal,
+            Detail = "Could not get nonce."
+        };
+
+        return AcmeResponse<string>.From(error);
+    }
+
+    private static async ValueTask<X509Certificate2?> GetCert(string? mediaType, HttpContent content) {
+
+        if (string.IsNullOrWhiteSpace(mediaType)) return null;
+
+        return mediaType switch {
+            "application/pkix-cert" => new X509Certificate2(await content.ReadAsByteArrayAsync()),
+            "application/pem-certificate-chain" => X509Certificate2.CreateFromPem(await content.ReadAsStringAsync()),
+            "application/pkcs7-mime" => new X509Certificate2(await content.ReadAsByteArrayAsync()),
+            _ => null,
+        };
+
     }
 
     private static bool IsJsonMediaType(string? mediaType) {
@@ -283,6 +342,7 @@ internal sealed class AcmeClient : IAcmeClient {
         return false;
     }
 
+    // TODO: Maybe instead of int TimeSpan
     private static int GetRetryAfter(HttpResponseMessage response) {
 
         var retryAfter = response.Headers.RetryAfter;
@@ -303,22 +363,24 @@ internal sealed class AcmeClient : IAcmeClient {
         var headers = response.Headers;
         if (!headers.TryGetValues("Link", out var values)) return FrozenDictionary<string, Uri[]>.Empty;
 
-        return values
+        var links = values
             .Select(ParseLink)
-            .ToLookup(ru => ru.Rel, ru => ru.Uri)
-            .ToFrozenDictionary(g => g.Key, g => g.ToArray());
+            .ToLookup(ru => ru.Rel, ru => ru.Uri, StringComparer.OrdinalIgnoreCase)
+            .ToFrozenDictionary(g => g.Key, g => g.ToArray(), StringComparer.OrdinalIgnoreCase);
+
+        if (links.TryGetValue("index", out var uris))
+            _directoryUri = uris[0];
+
+        return links;
     }
 
     private (string Rel, Uri Uri) ParseLink(string input) {
 
         var inputSpan = input.AsSpan();
 
-        var arrayToReturn = ArrayPool<Range>.Shared.Rent(2);
-        using var d0 = Deferer.Create(
-            array => ArrayPool<Range>.Shared.Return(array), arrayToReturn);
+        using var ranges = new PooledArray<Range>(2);
 
-        inputSpan.Split(arrayToReturn, ';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var ranges = arrayToReturn.AsSpan(0, 2);
+        inputSpan.Split(ranges, ';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         var uri = new Uri(inputSpan[ranges[0]][1..^1].ToString());
         var rel = inputSpan[ranges[1]]

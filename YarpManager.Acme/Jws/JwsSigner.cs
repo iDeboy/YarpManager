@@ -165,14 +165,9 @@ public static class JwsSigner {
 
         Debug.Assert(jwk._rsa is not null);
 
-        var rsaPadding = (algorithm is
-               JsonSignAlgorithm.PS256 or
-               JsonSignAlgorithm.PS384 or
-               JsonSignAlgorithm.PS512) ?
-            RSASignaturePadding.Pss :
-            RSASignaturePadding.Pkcs1;
+        var (rsaPadding, hashAlgorithm) = JwsUtils.GetGetRSASignaturePaddingAndHashAlgorithmName(algorithm);
 
-        var hashAlgorithm = JwsUtils.GetHashAlgorithmName(algorithm);
+        if (rsaPadding is null) return 0;
 
         jwk._rsa.TrySignData(data,
             destination,

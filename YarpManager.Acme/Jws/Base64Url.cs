@@ -1,14 +1,12 @@
 ﻿using System.Buffers;
 using System.Buffers.Text;
-using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using YarpManager.Acme.Attributes;
 using YarpManager.Acme.Jws.Converters;
 using YarpManager.Acme.Utils;
 using YarpManager.Common;
@@ -52,8 +50,6 @@ public static class Base64Url {
 
             property.CustomConverter = converter;
         }
-
-
 
     }
 

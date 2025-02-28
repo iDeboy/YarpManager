@@ -1,9 +1,10 @@
 ﻿using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
+using YarpManager.Acme.Attributes;
 
 namespace YarpManager.Acme.Jws;
 
-[JsonConverter(typeof(JsonStringEnumConverter<EllipticCurve>))]
+[StringEnum]
 public enum EllipticCurve {
 
     [EnumMember(Value = "P-256")]

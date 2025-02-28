@@ -7,8 +7,7 @@ using YarpManager.Acme.Jws.Converters;
 
 namespace YarpManager.Acme.Utils;
 
-/*internal*/
-public static class JsonUtils {
+internal static class JsonUtils {
 
     internal static readonly JsonSerializerOptions SerializerOptionsWithModifiers = new(JsonSerializerDefaults.Web) {
 
@@ -18,7 +17,8 @@ public static class JsonUtils {
         WriteIndented = false,
         TypeInfoResolver = new DefaultJsonTypeInfoResolver() {
             Modifiers = {
-                    Base64Url.Base64Modifier
+                    Base64Url.Base64Modifier,
+                    EnumConverterFactory.EnumModifier
             }
         }
 
@@ -32,6 +32,7 @@ public static class JsonUtils {
             new JwsConverterFactory(),
             new JwhConverterFactory(),
             new ClassBase64UrlConverterFactory(),
+            new EnumConverterFactory(),
             new DefaultConverterFactory()
         }
     };

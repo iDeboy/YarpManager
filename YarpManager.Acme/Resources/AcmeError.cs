@@ -1,20 +1,32 @@
-﻿namespace YarpManager.Acme.Resources;
-public sealed class AcmeError {
+﻿using System.Text.Json.Serialization;
 
-    public readonly struct Id {
+namespace YarpManager.Acme.Resources;
+public sealed class AcmeError : ExtensionMembers {
 
-        public Id() { }
+    [JsonRequired]
+    [JsonPropertyName("type")]
+    public required AcmeErrorType Type { get; init; }
 
-        public required string Type { get; init; }
-        public required string Value { get; init; }
-
-    }
-
-    public required string Type { get; init; }
+    [JsonRequired]
+    [JsonPropertyName("detail")]
     public required string Detail { get; init; }
 
-    public Id? Identifier { get; init; } = null;
+    [JsonPropertyName("subproblems")]
+    public SubProblem[]? Subproblems { get; init; }
 
-    public AcmeError[] Subproblems { get; init; } = [];
+    public sealed class SubProblem : ExtensionMembers {
+
+        [JsonRequired]
+        [JsonPropertyName("type")]
+        public required AcmeErrorType Type { get; init; }
+
+        [JsonRequired]
+        [JsonPropertyName("detail")]
+        public required string Detail { get; init; }
+
+        [JsonPropertyName("identifier")]
+        public AcmeErrorIdentifier? Identifier { get; init; }
+
+    }
 
 }

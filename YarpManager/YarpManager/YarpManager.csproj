@@ -9,7 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\YarpManager.Acme\YarpManager.Acme.csproj" />
     <ProjectReference Include="..\YarpManager.Client\YarpManager.Client.csproj" />
-    <PackageReference Include="LettuceEncrypt" Version="1.3.3" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.11" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.2.0" />
   </ItemGroup>

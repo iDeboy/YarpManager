@@ -16,8 +16,12 @@ internal sealed class JwhConverter<TJwk> : JsonConverter<JsonWebHeader<TJwk>> wh
         {
             writer.WritePropertyName("alg");
             JsonSerializer.Serialize(writer, value.Algorithm, JsonUtils.SerializerOptions);
-            writer.WritePropertyName("nonce");
-            JsonSerializer.Serialize(writer, value.Nonce, JsonUtils.SerializerOptions);
+
+            if (value.Nonce is not null) {
+                writer.WritePropertyName("nonce");
+                JsonSerializer.Serialize(writer, value.Nonce, JsonUtils.SerializerOptions);
+            }
+
             writer.WritePropertyName("url");
             JsonSerializer.Serialize(writer, value.Url, JsonUtils.SerializerOptions);
 

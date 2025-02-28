@@ -1,12 +1,7 @@
-using LettuceEncrypt.Acme;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
+using Microsoft.AspNetCore.Connections;
+using Yarp.ReverseProxy.Configuration;
+using YarpManager.Abstractions;
 using YarpManager.Acme;
-using YarpManager.Acme.Factories;
-using YarpManager.Acme.Jws;
-using YarpManager.Acme.Jws.Jwk;
-using YarpManager.Acme.Utils;
 using YarpManager.WebUI;
 
 // TODO:
@@ -22,7 +17,7 @@ builder.WebHost.ConfigureKestrel(kestrel => {
     kestrel.ListenAnyIP(443, options => {
 
         options.UseHttps(https => {
-            https.UseLettuceEncrypt(options.ApplicationServices);
+
         });
 
     });
@@ -32,14 +27,10 @@ builder.WebHost.ConfigureKestrel(kestrel => {
 });
 
 // Register Yarp provider
+builder.Services.AddSingleton<IProxyConfigProvider, DbConfigProvider>();
 
 builder.Services.AddReverseProxy()
     .AddDnsDestinationResolver();
-
-builder.Services.AddLettuceEncrypt(options => {
-    options.AcceptTermsOfService = true;
-    options.AllowedChallengeTypes = ChallengeType.Any;
-});
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -60,15 +51,73 @@ else {
     // app.UseHsts();
 }
 
-using (var scope = app.Services.CreateScope()) {
+//using (var scope = app.Services.CreateScope()) {
 
-    var factory = scope.ServiceProvider.GetRequiredService<IAcmeServiceFactory>();
-    var acme = factory.CreateService(
-        "https://acme-staging-v02.api.letsencrypt.org/directory");
-    
-    var directory = await acme.NewAccount(["test@example.com"], true);
+//    var factory = scope.ServiceProvider.GetRequiredService<IAcmeServiceFactory>();
+//    var acme = factory.CreateService(
+//        "https://acme-staging-v02.api.letsencrypt.org/directory");
 
-}
+//    var accountResponse = await acme.NewAccount(["test@adsver.com"], true, JsonSignAlgorithm.PS512);
+
+//    if (accountResponse.TryGet(out var account)) {
+
+//        account.SaveKey("test.key");
+
+//        account.Dispose();
+//    }
+
+//    if (AsymmetricKeyInfo.TryLoadFromFile("test.key", out var key)) {
+
+//        var accountResponse2 = await acme.Account(key);
+
+//        if (accountResponse2.TryGet(out var account2)) {
+
+//            var orderRes = await account2.NewOrder(["adsver.com", "*.adsver.eu"]);
+
+//            if (orderRes.TryGet(out var orderService)) {
+
+//                var orderData = await orderService.Order();
+
+//                var authzsRes = await orderService.Authorizations();
+
+//                if (authzsRes.TryGet(out var authzServices)) {
+
+//                    var authzService = authzServices.First();
+
+//                    var challengesRes = await authzService.Challenges();
+
+//                    if (challengesRes.TryGet(out var challengeServices)) {
+
+//                        var challengeService = challengeServices.First();
+
+//                        var validate = await challengeService.Validate();
+
+
+//                    }
+
+//                    var authz = await authzService.Authorization();
+
+//                }
+
+//            }
+//            //var newKey = AsymmetricKey.Create(JsonSignAlgorithm.ES256);
+
+//            //// TODO: Save the file path of the key if exists one,
+//            //// if exists on the ChangeKey method Rewrite the file with the new key
+//            //var changeKeyRes = await account2.ChangeKey(newKey);
+
+//            //if (changeKeyRes.IsSuccessStatusCode) {
+//            //    newKey.SaveToFile("test.key");
+//            //}
+
+//            // var response = await account2.Deactivate();
+
+//            account2.Dispose();
+//        }
+//    }
+
+
+//}
 
 // app.UseHttpsRedirection();
 
